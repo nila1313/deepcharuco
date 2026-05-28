@@ -129,8 +129,11 @@ dmypy.json
 .pyre/
 
 data_demo/
+my_dataset/
 src/config.yaml
 src/tb_logs
+src/tb_logs_before_rotate180/
+*.ckpt
 iris_conf.yaml
 iris_conf_ngrok.yaml
 iris_conf_jump.yaml

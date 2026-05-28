@@ -8,7 +8,7 @@ import numpy as np
 from torch.utils.data.dataset import Dataset
 from transformations import Transformation
 from models.model_utils import pre_bgr_image
-from gridwindow import MagicGrid
+#from gridwindow import MagicGrid
 
 
 def create_label(image: np.ndarray, keypoints: np.ndarray, kpts_ids:
@@ -74,17 +74,17 @@ class CharucoDataset(Dataset):
         dust_bin_ids = self.configs.n_ids
         loc, ids = create_label(image, keypoints, kpts_ids, isnegative, dust_bin_ids)
 
-        if self._visualize:
-            w = MagicGrid(640, 640, waitKey=0)
-            from aruco_utils import draw_inner_corners, draw_circle_pred
-            img = image.copy()
-            img = draw_inner_corners(img, keypoints, kpts_ids, draw_ids=True, radius=3)
-            img = draw_circle_pred(img, loc, ids, dust_bin_ids, draw_ids=True)
-
-            if w.update([img]) == ord('q'):
-                import sys
-                sys.exit()
-
+        # Visualization disabled because MagicGrid is not installed
+        # if self._visualize:
+        #     w = MagicGrid(640, 640, waitKey=0)
+        #     from aruco_utils import draw_inner_corners, draw_circle_pred
+        #     img = image.copy()
+        #     img = draw_inner_corners(img, keypoints, kpts_ids, draw_ids=True, radius=3)
+        #     img = draw_circle_pred(img, loc, ids, dust_bin_ids, draw_ids=True)
+        #
+        #     if w.update([img]) == ord('q'):
+        #         import sys
+        #         sys.exit()
         image = pre_bgr_image(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY))
         sample = {
             'image': image,

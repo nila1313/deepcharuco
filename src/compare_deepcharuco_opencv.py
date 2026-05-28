@@ -1,0 +1,284 @@
+import os
+import glob
+import cv2
+import numpy as np
+import pandas as pd
+
+
+# ============================================================
+# Paths
+# ============================================================
+
+image_dir = "../my_dataset/raw_frames"
+deep_keypoint_dir = "../my_dataset/inference_output/keypoints"
+output_dir = "../my_dataset/comparison_output"
+
+os.makedirs(output_dir, exist_ok=True)
+
+
+# ============================================================
+# Board configuration
+# Your board: 7 x 7 squares -> 6 x 6 inner corners = 36
+# ============================================================
+
+squares_x = 7
+squares_y = 7
+square_length = 0.14285714285714285
+marker_length = 0.10
+
+aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_1000)
+
+try:
+    board = cv2.aruco.CharucoBoard(
+        (squares_x, squares_y),
+        square_length,
+        marker_length,
+        aruco_dict
+    )
+except Exception:
+    board = cv2.aruco.CharucoBoard_create(
+        squares_x,
+        squares_y,
+        square_length,
+        marker_length,
+        aruco_dict
+    )
+
+
+def read_deepcharuco_keypoints(csv_path):
+    if not os.path.exists(csv_path):
+        return {}, []
+
+    df = pd.read_csv(csv_path)
+
+    if df.empty:
+        return {}, []
+
+    df["corner_id"] = df["corner_id"].astype(int)
+
+    duplicate_ids = (
+        df[df.duplicated("corner_id", keep=False)]["corner_id"]
+        .unique()
+        .tolist()
+    )
+
+    result = {}
+
+    # Keep first occurrence if duplicate ID appears
+    for _, row in df.iterrows():
+        cid = int(row["corner_id"])
+        if cid not in result:
+            result[cid] = (float(row["x"]), float(row["y"]))
+
+    return result, duplicate_ids
+
+
+def detect_opencv_charuco(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    parameters = cv2.aruco.DetectorParameters()
+
+    # New OpenCV API: CharucoDetector
+    if hasattr(cv2.aruco, "CharucoDetector"):
+        try:
+            charuco_params = cv2.aruco.CharucoParameters()
+            detector = cv2.aruco.CharucoDetector(
+                board,
+                charuco_params,
+                parameters
+            )
+
+            charuco_corners, charuco_ids, marker_corners, marker_ids = detector.detectBoard(gray)
+
+            if charuco_ids is None or charuco_corners is None:
+                return {}
+
+            result = {}
+            for corner, cid in zip(charuco_corners, charuco_ids.flatten()):
+                x, y = corner.ravel()
+                result[int(cid)] = (float(x), float(y))
+
+            return result
+
+        except Exception as e:
+            print("CharucoDetector failed:", e)
+
+    # Older OpenCV API: detectMarkers + interpolateCornersCharuco
+    try:
+        if hasattr(cv2.aruco, "ArucoDetector"):
+            detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
+            marker_corners, marker_ids, _ = detector.detectMarkers(gray)
+        else:
+            marker_corners, marker_ids, _ = cv2.aruco.detectMarkers(
+                gray,
+                aruco_dict,
+                parameters=parameters
+            )
+
+        if marker_ids is None or len(marker_ids) == 0:
+            return {}
+
+        retval, charuco_corners, charuco_ids = cv2.aruco.interpolateCornersCharuco(
+            marker_corners,
+            marker_ids,
+            gray,
+            board
+        )
+
+        if charuco_ids is None or charuco_corners is None:
+            return {}
+
+        result = {}
+        for corner, cid in zip(charuco_corners, charuco_ids.flatten()):
+            x, y = corner.ravel()
+            result[int(cid)] = (float(x), float(y))
+
+        return result
+
+    except Exception as e:
+        print("OpenCV ChArUco detection failed:", e)
+        return {}
+
+
+def draw_comparison(image, opencv_pts, deep_pts, matched_ids, save_path):
+    vis = image.copy()
+
+    # OpenCV points: green circles
+    for cid, (x, y) in opencv_pts.items():
+        cv2.circle(vis, (int(round(x)), int(round(y))), 4, (0, 255, 0), -1)
+        cv2.putText(
+            vis,
+            f"O{cid}",
+            (int(round(x)) + 4, int(round(y)) - 4),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.35,
+            (0, 255, 0),
+            1,
+            cv2.LINE_AA
+        )
+
+    # DeepChArUco points: red crosses
+    for cid, (x, y) in deep_pts.items():
+        cv2.drawMarker(
+            vis,
+            (int(round(x)), int(round(y))),
+            (0, 0, 255),
+            markerType=cv2.MARKER_TILTED_CROSS,
+            markerSize=8,
+            thickness=2
+        )
+        cv2.putText(
+            vis,
+            f"D{cid}",
+            (int(round(x)) + 4, int(round(y)) + 12),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.35,
+            (0, 0, 255),
+            1,
+            cv2.LINE_AA
+        )
+
+    # Blue lines between matched IDs
+    for cid in matched_ids:
+        ox, oy = opencv_pts[cid]
+        dx, dy = deep_pts[cid]
+        cv2.line(
+            vis,
+            (int(round(ox)), int(round(oy))),
+            (int(round(dx)), int(round(dy))),
+            (255, 0, 0),
+            1
+        )
+
+    cv2.imwrite(save_path, vis)
+
+
+image_paths = sorted(
+    glob.glob(os.path.join(image_dir, "frame_*.png"))
+)
+
+# Compare only frames that have DeepChArUco keypoint CSV files
+# This means it will compare the same frames you already ran inference on.
+image_paths = [
+    p for p in image_paths
+    if os.path.exists(
+        os.path.join(
+            deep_keypoint_dir,
+            os.path.basename(p).replace(".png", ".csv")
+        )
+    )
+]
+
+print("Frames to compare:", len(image_paths))
+
+rows = []
+
+for image_path in image_paths:
+    frame_name = os.path.basename(image_path)
+    stem = os.path.splitext(frame_name)[0]
+
+    deep_csv_path = os.path.join(deep_keypoint_dir, stem + ".csv")
+
+    image = cv2.imread(image_path)
+
+    if image is None:
+        print("Could not read image:", image_path)
+        continue
+
+    # Important: your DeepChArUco inference resized images to 320 x 240
+    image = cv2.resize(image, (320, 240), cv2.INTER_LINEAR)
+
+    deep_pts, duplicate_ids = read_deepcharuco_keypoints(deep_csv_path)
+    opencv_pts = detect_opencv_charuco(image)
+
+    matched_ids = sorted(set(deep_pts.keys()) & set(opencv_pts.keys()))
+
+    errors = []
+
+    for cid in matched_ids:
+        dx, dy = deep_pts[cid]
+        ox, oy = opencv_pts[cid]
+        error = np.sqrt((dx - ox) ** 2 + (dy - oy) ** 2)
+        errors.append(error)
+
+    if len(errors) > 0:
+        mean_error = float(np.mean(errors))
+        median_error = float(np.median(errors))
+        max_error = float(np.max(errors))
+    else:
+        mean_error = np.nan
+        median_error = np.nan
+        max_error = np.nan
+
+    rows.append({
+        "frame": frame_name,
+        "opencv_corners": len(opencv_pts),
+        "deepcharuco_corners_unique": len(deep_pts),
+        "matched_ids": len(matched_ids),
+        "matched_id_list": matched_ids,
+        "mean_error_px": mean_error,
+        "median_error_px": median_error,
+        "max_error_px": max_error,
+        "duplicate_deep_ids": duplicate_ids
+    })
+
+    save_vis_path = os.path.join(output_dir, stem + "_comparison.png")
+    draw_comparison(image, opencv_pts, deep_pts, matched_ids, save_vis_path)
+
+    print(
+        f"{frame_name}: "
+        f"OpenCV={len(opencv_pts)}, "
+        f"Deep={len(deep_pts)}, "
+        f"Matched={len(matched_ids)}, "
+        f"Mean error={mean_error}"
+    )
+
+
+summary_df = pd.DataFrame(rows)
+summary_csv = os.path.join(output_dir, "comparison_summary.csv")
+summary_df.to_csv(summary_csv, index=False)
+
+print()
+print("Comparison finished.")
+print("Summary saved to:", summary_csv)
+print("Visualization images saved to:", output_dir)

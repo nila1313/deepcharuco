@@ -16,122 +16,40 @@ def apply_to_keypoints(self, keypoints, holes, **params):
             if self._keypoint_in_hole(kp, hole):
                 result.discard(kp)
     return list(result)
-
 A.CoarseDropout.apply_to_keypoints = apply_to_keypoints  # noqa: E305
 
 
 def board_transformations(refinenet, input_size):
-    """
-    More realistic augmentation for our real omnidirectional ChArUco video.
-
-    Main model:
-    - board is large
-    - partially cropped
-    - moderate rotation
-    - moderate shear
-    - fewer random occlusions
-
-    RefineNet:
-    - smaller transformations
-    - focuses on local refinement
-    """
-
-    if refinenet:
-        trans = (-0.05, 0.05)
-        scale = (0.85, 1.15)
-        rotate = (-10, 10)
-        shear = (-5, 5)
-        cd_p = 0.0
-    else:
-        trans = (-0.20, 0.20)
-        scale = (0.70, 1.35)
-        rotate = (-35, 35)
-        shear = (-15, 15)
-        cd_p = 0.15
-
+    transl = (0, 0) if refinenet else (-0.45, 0.45)
+    scale = (0.3, 0.75) if refinenet else (0.25, 0.9)
+    cd_p = 0 if refinenet else 0.4
     max_holes = 6
     min_holes = 1
     maxs = 64
     mins = 16
-
-    transf = [
-        A.PadIfNeeded(
-            min_height=input_size[1],
-            min_width=input_size[0],
-            always_apply=True,
-            border_mode=cv2.BORDER_CONSTANT,
-            value=0,
-            mask_value=0,
-        ),
-
-        A.OneOf(
-    [
-        A.Affine(
-            scale=scale,
-            rotate=(-45, 45),
-            shear=shear,
-            translate_percent=trans,
-            keep_ratio=True,
-            fit_output=False,
-            always_apply=True,
-        ),
-        A.Affine(
-            scale=scale,
-            rotate=(135, 225),
-            shear=shear,
-            translate_percent=trans,
-            keep_ratio=True,
-            fit_output=False,
-            always_apply=True,
-        ),
-    ],
-    p=1.0,
-),
-
-        A.Resize(
-            height=input_size[1],
-            width=input_size[0],
-            always_apply=True,
-        ),
-
-        A.OneOf(
-            [
-                A.CoarseDropout(
-                    max_holes=max_holes,
-                    max_height=maxs,
-                    max_width=maxs,
-                    min_holes=min_holes,
-                    min_height=mins,
-                    min_width=mins,
-                    mask_fill_value=0,
-                ),
-
-                *[
-                    A.CoarseDropout(
-                        max_holes=max_holes,
-                        max_height=maxs,
-                        max_width=maxs,
-                        min_holes=min_holes,
-                        min_height=mins,
-                        min_width=mins,
-                        fill_value=f,
-                        mask_fill_value=255,
-                    )
-                    for f in [0, 128, 255]
-                ],
-            ],
-            p=cd_p,
-        ),
-    ]
-
-    return A.Compose(
-        transf,
-        keypoint_params=A.KeypointParams(
-            format="xy",
-            label_fields=["ids"],
-            remove_invisible=True,
-        ),
-    )
+    transf = [A.PadIfNeeded(min_height=input_size[1],
+                            min_width=input_size[0], always_apply=True,
+                            border_mode=cv2.BORDER_CONSTANT, value=0,
+                            mask_value=0),
+              A.Affine(scale=scale, rotate=(-360, 360), shear=(-35, 35),
+                       translate_percent=transl, keep_ratio=True,
+                       fit_output=False, always_apply=True),
+              A.Resize(height=input_size[1], width=input_size[0],
+                       always_apply=True),
+              A.OneOf([A.CoarseDropout(max_holes=max_holes, max_height=maxs,
+                                       max_width=maxs, min_holes=min_holes,
+                                       min_height=mins, min_width=mins,
+                                       mask_fill_value=0),
+                       *[A.CoarseDropout(max_holes=max_holes, max_height=maxs,
+                                         max_width=maxs, min_holes=min_holes,
+                                         min_height=mins, min_width=mins,
+                                         fill_value = f, mask_fill_value=255)
+                         for f in (0, 128, 255)]
+                       ], p=cd_p)
+              ]
+    return A.Compose(transf, keypoint_params=A.KeypointParams(format='xy',
+                                                              label_fields=['ids'],
+                                                              remove_invisible=True))
 
 
 class Transformation:
