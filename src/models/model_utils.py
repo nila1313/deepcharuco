@@ -82,8 +82,8 @@ def pred_to_keypoints(
         loc_hat: torch.Tensor,
         ids_hat: torch.Tensor,
         dust_bin_ids: int,
-        loc_conf_thresh: float = 0.35,
-        id_conf_thresh: float = 0.20,
+        loc_conf_thresh: float = 0.05,
+        id_conf_thresh: float = 0.05,
         keep_best_per_id: bool = True):
     """
     Transform model prediction to keypoints with IDs using confidence filtering.

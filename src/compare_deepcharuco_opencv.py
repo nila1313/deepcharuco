@@ -10,8 +10,8 @@ import pandas as pd
 # ============================================================
 
 image_dir = "../my_dataset/raw_frames"
-deep_keypoint_dir = "../my_dataset/inference_output_best_masked_min4_epoch7_raw/keypoints"
-output_dir = "../my_dataset/comparison_output_best_masked_min4_epoch7_raw"
+deep_keypoint_dir = "../my_dataset/inference_output_best_aug_min6_epoch5_raw/keypoints"
+output_dir = "../my_dataset/comparison_output_best_aug_min6_epoch5_raw"
 
 os.makedirs(output_dir, exist_ok=True)
 

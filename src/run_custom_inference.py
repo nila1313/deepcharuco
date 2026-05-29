@@ -11,8 +11,8 @@ from inference import load_models, infer_image
 # Paths
 # -----------------------------
 image_dir = "../my_dataset/raw_frames"
-output_img_dir = "../my_dataset/inference_output_best_masked_min4_epoch7_raw_conf_filter/images"
-output_kpt_dir = "../my_dataset/inference_output_best_masked_min4_epoch7_raw_conf_filter/keypoints"
+output_img_dir = "../my_dataset/inference_output_best_aug_min6_epoch5_raw/images"
+output_kpt_dir = "../my_dataset/inference_output_best_aug_min6_epoch5_raw/keypoints"
 
 os.makedirs(output_img_dir, exist_ok=True)
 os.makedirs(output_kpt_dir, exist_ok=True)
@@ -21,7 +21,7 @@ os.makedirs(output_kpt_dir, exist_ok=True)
 ## -----------------------------
 # Your trained checkpoints
 # -----------------------------
-deepc_path = "./tb_logs/ckpts_deepcharuco_masked_pseudo_min4/best_masked_min4_epoch7.ckpt"
+deepc_path = "./tb_logs/ckpts_deepcharuco_masked_pseudo_min6_aug/best_aug_min6_epoch5.ckpt"
 refinenet_path = "./tb_logs/ckpts_refinenet/epoch=193-step=9312.ckpt"
 # -----------------------------
 # Your board configuration
