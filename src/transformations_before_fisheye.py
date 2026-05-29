@@ -19,93 +19,6 @@ def apply_to_keypoints(self, keypoints, holes, **params):
 
 A.CoarseDropout.apply_to_keypoints = apply_to_keypoints  # noqa: E305
 
-def apply_radial_fisheye_to_board(image, mask, keypoints, ids, p=0.70):
-    """
-    Apply approximate fisheye/barrel-style radial distortion to the synthetic board.
-
-    This warps:
-    - board image
-    - board mask
-    - ChArUco keypoint coordinates
-
-    It is used only on the synthetic board before pasting onto the real background.
-    """
-
-    if random.random() > p:
-        return image, mask, keypoints, ids
-
-    h, w = image.shape[:2]
-
-    # Strength controls how curved the board becomes.
-    # Negative values usually give a barrel/fisheye-like effect.
-    k = random.uniform(-0.45, -0.12)
-
-    # Slightly move distortion center so not every sample is perfectly centered.
-    cx = w * random.uniform(0.42, 0.58)
-    cy = h * random.uniform(0.42, 0.58)
-
-    # Normalize by focal-like scale.
-    f = min(w, h) * random.uniform(0.45, 0.70)
-
-    # Build inverse mapping for cv2.remap
-    yy, xx = np.indices((h, w), dtype=np.float32)
-
-    x = (xx - cx) / f
-    y = (yy - cy) / f
-    r2 = x * x + y * y
-
-    factor = 1.0 + k * r2
-    factor = np.maximum(factor, 0.25)
-
-    src_x = cx + (xx - cx) / factor
-    src_y = cy + (yy - cy) / factor
-
-    src_x = src_x.astype(np.float32)
-    src_y = src_y.astype(np.float32)
-
-    warped_image = cv2.remap(
-        image,
-        src_x,
-        src_y,
-        interpolation=cv2.INTER_LINEAR,
-        borderMode=cv2.BORDER_CONSTANT,
-        borderValue=(0, 0, 0),
-    )
-
-    warped_mask = cv2.remap(
-        mask,
-        src_x,
-        src_y,
-        interpolation=cv2.INTER_NEAREST,
-        borderMode=cv2.BORDER_CONSTANT,
-        borderValue=0,
-    )
-
-    # Forward-warp keypoints approximately with the same radial model
-    new_keypoints = []
-    new_ids = []
-
-    for kp, cid in zip(keypoints, ids):
-        x0, y0 = kp[0], kp[1]
-
-        xn = (x0 - cx) / f
-        yn = (y0 - cy) / f
-        r2_kp = xn * xn + yn * yn
-
-        factor_kp = 1.0 + k * r2_kp
-        factor_kp = max(factor_kp, 0.25)
-
-        xd = cx + (x0 - cx) * factor_kp
-        yd = cy + (y0 - cy) * factor_kp
-
-        if 0 <= xd < w and 0 <= yd < h:
-            # Keep only points still inside visible board mask
-            if warped_mask[int(round(yd)), int(round(xd))] > 0:
-                new_keypoints.append((float(xd), float(yd)))
-                new_ids.append(cid)
-
-    return warped_image, warped_mask, new_keypoints, np.array(new_ids)
-
 
 def board_transformations(refinenet, input_size):
     """
@@ -134,7 +47,7 @@ def board_transformations(refinenet, input_size):
         scale = (0.70, 1.35)
         rotate = (-35, 35)
         shear = (-15, 15)
-        cd_p = 0.05
+        cd_p = 0.15
 
     max_holes = 6
     min_holes = 1
@@ -287,26 +200,10 @@ class Transformation:
         )
 
     def _transform_board(self):
-        t_res = self._transf_board(
-            image=self.board_img,
-            mask=self.board_mask,
-            keypoints=self.corners,
-            ids=self.ids
-        )
-
-        image, mask, keypoints, ids = apply_radial_fisheye_to_board(
-            t_res["image"],
-            t_res["mask"],
-            t_res["keypoints"],
-            t_res["ids"],
-            p=0.70
-        )
-
-        t_res["image"] = image
-        t_res["mask"] = mask
-        t_res["keypoints"] = keypoints
-        t_res["ids"] = ids
-
+        t_res = self._transf_board(image=self.board_img,
+                                   mask=self.board_mask,
+                                   keypoints=self.corners,
+                                   ids=self.ids)
         return t_res
 
     def __call__(self, coco_img):

@@ -78,104 +78,14 @@ def pred_argmax(loc_hat: torch.Tensor, ids_hat: torch.Tensor, dust_bin_ids: int)
     return loc_argmax, ids_argmax
 
 
-def pred_to_keypoints(
-        loc_hat: torch.Tensor,
-        ids_hat: torch.Tensor,
-        dust_bin_ids: int,
-        loc_conf_thresh: float = 0.35,
-        id_conf_thresh: float = 0.20,
-        keep_best_per_id: bool = True):
+def pred_to_keypoints(loc_hat: torch.Tensor, ids_hat: torch.Tensor, dust_bin_ids: int):
     """
-    Transform model prediction to keypoints with IDs using confidence filtering.
-
-    Original behavior used pure argmax:
-        every cell whose loc argmax was not dustbin became a keypoint.
-
-    This version is stricter:
-        1. Convert loc/id logits to probabilities.
-        2. Keep a cell only if:
-              best non-dustbin loc confidence >= loc_conf_thresh
-              best ID confidence >= id_conf_thresh
-        3. Optionally keep only the strongest prediction per ID.
-
-    This should reduce false positives and duplicate IDs.
+    Transform a model prediction to keypoints with ids and optionally confidences
     """
     assert loc_hat.ndim == 4 and ids_hat.ndim == 4
-
-    # This code assumes batch size 1 during inference.
-    assert loc_hat.shape[0] == 1 and ids_hat.shape[0] == 1
-
-    device = loc_hat.device
-
-    loc_prob = torch.softmax(loc_hat, dim=1)
-    ids_prob = torch.softmax(ids_hat, dim=1)
-
-    # Loc classes: 0..63 are offsets, 64 is dustbin.
-    loc_non_dust = loc_prob[:, :64, :, :]
-    loc_scores, loc_offsets = torch.max(loc_non_dust, dim=1)
-    loc_dust_score = loc_prob[:, 64, :, :]
-
-    # ID classes: 0..n_ids-1 are real IDs, dust_bin_ids is dustbin.
-    id_non_dust = ids_prob[:, :dust_bin_ids, :, :]
-    id_scores, id_argmax = torch.max(id_non_dust, dim=1)
-
-    # Require positive confidence and stronger non-dustbin than dustbin.
-    keep = (
-        (loc_scores >= loc_conf_thresh)
-        & (id_scores >= id_conf_thresh)
-        & (loc_scores > loc_dust_score)
-    )
-
-    if keep.sum() == 0:
-        return (
-            torch.empty((0, 2), dtype=torch.long, device=device),
-            torch.empty((0,), dtype=torch.long, device=device)
-        )
-
-    indices = torch.nonzero(keep[0], as_tuple=False)
-    ys_cell = indices[:, 0]
-    xs_cell = indices[:, 1]
-
-    offsets = loc_offsets[0, ys_cell, xs_cell]
-    ids_found = id_argmax[0, ys_cell, xs_cell]
-
-    xs = 8 * xs_cell + (offsets % 8)
-    ys = 8 * ys_cell + (offsets // 8).to(torch.long)
-
-    kpts = torch.cat((xs.unsqueeze(1), ys.unsqueeze(1)), dim=1)
-
-    # Combined confidence for ranking/filtering.
-    scores = (
-        loc_scores[0, ys_cell, xs_cell]
-        * id_scores[0, ys_cell, xs_cell]
-    )
-
-    if keep_best_per_id and ids_found.numel() > 0:
-        best = {}
-
-        for i in range(ids_found.shape[0]):
-            cid = int(ids_found[i].detach().cpu())
-            score = float(scores[i].detach().cpu())
-
-            if cid not in best or score > best[cid][0]:
-                best[cid] = (score, i)
-
-        keep_indices = torch.tensor(
-            [v[1] for v in best.values()],
-            dtype=torch.long,
-            device=device
-        )
-
-        kpts = kpts[keep_indices]
-        ids_found = ids_found[keep_indices]
-        scores = scores[keep_indices]
-
-    # Sort by ID for stable output.
-    order = torch.argsort(ids_found)
-    kpts = kpts[order]
-    ids_found = ids_found[order]
-
-    return kpts, ids_found
+    loc_argmax, ids_argmax = pred_argmax(loc_hat, ids_hat, dust_bin_ids)
+    kpts, ids = label_to_keypoints(loc_argmax, ids_argmax, dust_bin_ids)
+    return kpts, ids
 
 
 def label_to_keypoints(loc: torch.Tensor, ids: torch.Tensor, dust_bin_ids: int):

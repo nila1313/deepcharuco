@@ -11,8 +11,8 @@ from inference import load_models, infer_image
 # Paths
 # -----------------------------
 image_dir = "../my_dataset/raw_frames"
-output_img_dir = "../my_dataset/inference_output/images"
-output_kpt_dir = "../my_dataset/inference_output/keypoints"
+output_img_dir = "../my_dataset/inference_output_best_masked_min4_epoch7_raw_conf_filter/images"
+output_kpt_dir = "../my_dataset/inference_output_best_masked_min4_epoch7_raw_conf_filter/keypoints"
 
 os.makedirs(output_img_dir, exist_ok=True)
 os.makedirs(output_kpt_dir, exist_ok=True)
@@ -21,8 +21,8 @@ os.makedirs(output_kpt_dir, exist_ok=True)
 ## -----------------------------
 # Your trained checkpoints
 # -----------------------------
-deepc_path = "./tb_logs/ckpts_deepcharuco/epoch=97-step=2352-v1.ckpt"
-refinenet_path = "./tb_logs/ckpts_refinenet/epoch=197-step=9504.ckpt"
+deepc_path = "./tb_logs/ckpts_deepcharuco_masked_pseudo_min4/best_masked_min4_epoch7.ckpt"
+refinenet_path = "./tb_logs/ckpts_refinenet/epoch=193-step=9312.ckpt"
 # -----------------------------
 # Your board configuration
 # 7 x 7 board -> 6 x 6 inner corners = 36
@@ -57,7 +57,7 @@ image_paths = sorted(glob.glob(os.path.join(image_dir, "frame_*.png")))
 
 print("Total images found:", len(image_paths))
 
-image_paths = image_paths[:100]
+#image_paths = image_paths[:100]
 
 all_results = {}
 

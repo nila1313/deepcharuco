@@ -127,34 +127,82 @@ class lModel(pl.LightningModule):
     def infer_image(self, img: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         return self.model.infer_image(img)
 
+    def _unpack_batch(self, batch):
+        """
+        Supports both old batches:
+            {"image": image, "label": (loc, ids)}
+
+        and masked batches:
+            {"image": image, "label": (loc, ids), "mask": mask}
+
+        mask shape: B x H/8 x W/8
+        mask value:
+            1 = use this grid cell in the loss
+            0 = ignore this grid cell in the loss
+        """
+        x = batch["image"]
+        loc, ids = batch["label"]
+
+        if "mask" in batch:
+            mask = batch["mask"].float()
+        else:
+            mask = torch.ones_like(ids, dtype=torch.float32)
+
+        return x, loc, ids, mask
+
+    def _masked_cross_entropy(self, logits, target, mask):
+        """
+        logits: B x C x H x W
+        target: B x H x W
+        mask:   B x H x W
+
+        Computes cross entropy per grid cell, then averages only over
+        mask==1 cells.
+        """
+        loss_per_cell = nn.functional.cross_entropy(
+            logits,
+            target,
+            reduction="none"
+        )
+
+        mask = mask.to(loss_per_cell.device).float()
+        loss_per_cell = loss_per_cell * mask
+
+        denom = mask.sum().clamp_min(1.0)
+
+        return loss_per_cell.sum() / denom
+
     def validation_step(self, batch, batch_idx):
-        # training_step defines the train loop.
-        # it is independent of forward
-        x, (loc, ids) = batch.values()
+        x, loc, ids, mask = self._unpack_batch(batch)
         loc_hat, ids_hat = self.model(x).values()
 
-        loss_loc = nn.functional.cross_entropy(loc_hat, loc)
-        loss_ids = nn.functional.cross_entropy(ids_hat, ids)
+        loss_loc = self._masked_cross_entropy(loc_hat, loc, mask)
+        loss_ids = self._masked_cross_entropy(ids_hat, ids, mask)
 
         self.log("val_loss_loc", loss_loc)
         self.log("val_loss_ids", loss_ids)
         self.log("val_loss", loss_loc + loss_ids)
 
+        # Metrics are still computed on the full target grid.
+        # For pseudo-real validation this can be imperfect, but it is okay
+        # for now because final evaluation uses compare_deepcharuco_opencv.py.
         dist, ratio = self.dc_metrics((loc_hat, ids_hat), (loc, ids))
         self.log("val_l2_pixels", dist)
         self.log("val_match_ratio", ratio)
+
         return loss_loc + loss_ids
 
     def training_step(self, batch, batch_idx):
-        x, (loc, ids) = batch.values()
+        x, loc, ids, mask = self._unpack_batch(batch)
         loc_hat, ids_hat = self.model(x).values()
 
-        loss_loc = nn.functional.cross_entropy(loc_hat, loc)
-        loss_ids = nn.functional.cross_entropy(ids_hat, ids)
+        loss_loc = self._masked_cross_entropy(loc_hat, loc, mask)
+        loss_ids = self._masked_cross_entropy(ids_hat, ids, mask)
 
         self.log("train_loss_loc", loss_loc)
         self.log("train_loss_ids", loss_ids)
         self.log("train_loss", loss_loc + loss_ids)
+
         return loss_loc + loss_ids
 
     def configure_optimizers(self):
