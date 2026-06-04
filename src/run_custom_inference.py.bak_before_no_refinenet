@@ -11,8 +11,8 @@ from inference import load_models, infer_image
 # Paths
 # -----------------------------
 image_dir = "../my_dataset/raw_frames"
-output_img_dir = "../my_dataset/inference_output_best_aug_min6_epoch5_final/images"
-output_kpt_dir = "../my_dataset/inference_output_best_aug_min6_epoch5_final/keypoints"
+output_img_dir = "../my_dataset/inference_output_best_aug_min6_epoch5_iddust_filter/images"
+output_kpt_dir = "../my_dataset/inference_output_best_aug_min6_epoch5_iddust_filter/keypoints"
 
 os.makedirs(output_img_dir, exist_ok=True)
 os.makedirs(output_kpt_dir, exist_ok=True)
@@ -22,7 +22,7 @@ os.makedirs(output_kpt_dir, exist_ok=True)
 # Your trained checkpoints
 # -----------------------------
 deepc_path = "./tb_logs/ckpts_deepcharuco_masked_pseudo_min6_aug/best_aug_min6_epoch5.ckpt"
-refinenet_path = None
+refinenet_path = "./tb_logs/ckpts_refinenet/epoch=193-step=9312.ckpt"
 # -----------------------------
 # Your board configuration
 # 7 x 7 board -> 6 x 6 inner corners = 36

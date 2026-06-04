@@ -11,8 +11,8 @@ from inference import load_models, infer_image
 # Paths
 # -----------------------------
 image_dir = "../my_dataset/raw_frames"
-output_img_dir = "../my_dataset/inference_output_best_aug_min6_epoch5_final/images"
-output_kpt_dir = "../my_dataset/inference_output_best_aug_min6_epoch5_final/keypoints"
+output_img_dir = "../my_dataset/inference_output_best_aug_min6_epoch5_iddust_no_refinenet/images"
+output_kpt_dir = "../my_dataset/inference_output_best_aug_min6_epoch5_iddust_no_refinenet/keypoints"
 
 os.makedirs(output_img_dir, exist_ok=True)
 os.makedirs(output_kpt_dir, exist_ok=True)

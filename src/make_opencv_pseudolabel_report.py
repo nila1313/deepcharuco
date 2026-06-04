@@ -14,7 +14,7 @@ CSV_OUT.mkdir(parents=True, exist_ok=True)
 VIS_OUT.mkdir(parents=True, exist_ok=True)
 
 OUT_W, OUT_H = 320, 240
-MIN_CORNERS_TO_KEEP = 6
+MIN_CORNERS_TO_KEEP = 4
 
 aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_1000)
 
@@ -150,7 +150,7 @@ print("Saved summary:", summary_path)
 print("Frames kept with >=", MIN_CORNERS_TO_KEEP, "corners:", kept_count)
 print("Max OpenCV ChArUco corners:", max(counts) if counts else 0)
 print("Mean OpenCV ChArUco corners:", sum(counts) / len(counts) if counts else 0)
-print("Frames with >= 4 corners:", sum(c >= 4 for c in counts))
+print("Frames wmith >= 4 corners:", sum(c >= 4 for c in counts))
 print("Frames with >= 6 corners:", sum(c >= 6 for c in counts))
 print("Frames with >= 8 corners:", sum(c >= 8 for c in counts))
 print("Frames with >= 12 corners:", sum(c >= 12 for c in counts))

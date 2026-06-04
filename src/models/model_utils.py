@@ -84,25 +84,23 @@ def pred_to_keypoints(
         dust_bin_ids: int,
         loc_conf_thresh: float = 0.05,
         id_conf_thresh: float = 0.05,
+        loc_margin: float = 0.00,
+        id_margin: float = 0.00,
         keep_best_per_id: bool = True):
     """
     Transform model prediction to keypoints with IDs using confidence filtering.
 
-    Original behavior used pure argmax:
-        every cell whose loc argmax was not dustbin became a keypoint.
+    Important:
+    A prediction is accepted only if:
+      1. best non-dustbin localization is confident
+      2. best non-dustbin ID is confident
+      3. localization non-dustbin beats localization dustbin
+      4. ID non-dustbin beats ID dustbin
 
-    This version is stricter:
-        1. Convert loc/id logits to probabilities.
-        2. Keep a cell only if:
-              best non-dustbin loc confidence >= loc_conf_thresh
-              best ID confidence >= id_conf_thresh
-        3. Optionally keep only the strongest prediction per ID.
-
-    This should reduce false positives and duplicate IDs.
+    This avoids keeping cells where the model says:
+      "probably background, but if forced to choose a real ID, maybe ID 22."
     """
     assert loc_hat.ndim == 4 and ids_hat.ndim == 4
-
-    # This code assumes batch size 1 during inference.
     assert loc_hat.shape[0] == 1 and ids_hat.shape[0] == 1
 
     device = loc_hat.device
@@ -110,7 +108,7 @@ def pred_to_keypoints(
     loc_prob = torch.softmax(loc_hat, dim=1)
     ids_prob = torch.softmax(ids_hat, dim=1)
 
-    # Loc classes: 0..63 are offsets, 64 is dustbin.
+    # Location classes: 0..63 are offsets, 64 is dustbin.
     loc_non_dust = loc_prob[:, :64, :, :]
     loc_scores, loc_offsets = torch.max(loc_non_dust, dim=1)
     loc_dust_score = loc_prob[:, 64, :, :]
@@ -118,12 +116,13 @@ def pred_to_keypoints(
     # ID classes: 0..n_ids-1 are real IDs, dust_bin_ids is dustbin.
     id_non_dust = ids_prob[:, :dust_bin_ids, :, :]
     id_scores, id_argmax = torch.max(id_non_dust, dim=1)
+    id_dust_score = ids_prob[:, dust_bin_ids, :, :]
 
-    # Require positive confidence and stronger non-dustbin than dustbin.
     keep = (
         (loc_scores >= loc_conf_thresh)
         & (id_scores >= id_conf_thresh)
-        & (loc_scores > loc_dust_score)
+        & (loc_scores > loc_dust_score + loc_margin)
+        & (id_scores > id_dust_score + id_margin)
     )
 
     if keep.sum() == 0:
@@ -144,7 +143,7 @@ def pred_to_keypoints(
 
     kpts = torch.cat((xs.unsqueeze(1), ys.unsqueeze(1)), dim=1)
 
-    # Combined confidence for ranking/filtering.
+    # Ranking score: confidence that this cell is both a corner and a real ID.
     scores = (
         loc_scores[0, ys_cell, xs_cell]
         * id_scores[0, ys_cell, xs_cell]
@@ -168,15 +167,12 @@ def pred_to_keypoints(
 
         kpts = kpts[keep_indices]
         ids_found = ids_found[keep_indices]
-        scores = scores[keep_indices]
 
-    # Sort by ID for stable output.
     order = torch.argsort(ids_found)
     kpts = kpts[order]
     ids_found = ids_found[order]
 
     return kpts, ids_found
-
 
 def label_to_keypoints(loc: torch.Tensor, ids: torch.Tensor, dust_bin_ids: int):
     """

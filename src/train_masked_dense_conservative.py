@@ -9,8 +9,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 import pytorch_lightning as pl
 import configs
 
-from data import CharucoDataset
-from pseudo_data import PseudoCharucoDataset
+from masked_data import SyntheticMaskedDataset, PseudoMaskedDataset
 from models.net import lModel, dcModel
 
 
@@ -32,7 +31,7 @@ class SetLearningRate(pl.Callback):
         self.lr = lr
 
     def on_train_start(self, trainer, pl_module):
-        print(f"Setting fine-tuning learning rate to {self.lr}")
+        print(f"Setting masked fine-tuning learning rate to {self.lr}")
 
         for optimizer in trainer.optimizers:
             for group in optimizer.param_groups:
@@ -57,7 +56,7 @@ def make_loader(dataset, batch_size, shuffle, num_workers):
 if __name__ == "__main__":
     config = load_configuration(configs.CONFIG_PATH)
 
-    synthetic_train = CharucoDataset(
+    synthetic_train = SyntheticMaskedDataset(
         config,
         config.train_labels,
         config.train_images,
@@ -65,7 +64,7 @@ if __name__ == "__main__":
         validation=False,
     )
 
-    synthetic_val = CharucoDataset(
+    synthetic_val = SyntheticMaskedDataset(
         config,
         config.val_labels,
         config.val_images,
@@ -73,14 +72,14 @@ if __name__ == "__main__":
         validation=True,
     )
 
-    pseudo_all = PseudoCharucoDataset(
+    pseudo_all = PseudoMaskedDataset(
         config,
         "../my_dataset/opencv_pseudolabels_raw_320_min4/images",
-        "../my_dataset/opencv_pseudolabels_raw_320_min4/keypoints",
+        "../my_dataset/opencv_pseudolabels_raw_320_min4_dense_homography_conservative/keypoints",
     )
 
     n_total = len(pseudo_all)
-    n_val = max(8, int(0.2 * n_total))
+    n_val = max(10, int(0.2 * n_total))
     n_train = n_total - n_val
 
     generator = torch.Generator().manual_seed(42)
@@ -93,12 +92,15 @@ if __name__ == "__main__":
 
     print("Synthetic train samples:", len(synthetic_train))
     print("Synthetic val samples:", len(synthetic_val))
-    print("Pseudo min4 total samples:", len(pseudo_all))
-    print("Pseudo min4 train samples:", len(pseudo_train))
-    print("Pseudo min4 val samples:", len(pseudo_val))
+    print("Pseudo min6_aug total samples:", len(pseudo_all))
+    print("Pseudo min6_aug train samples:", len(pseudo_train))
+    print("Pseudo min6_aug val samples:", len(pseudo_val))
 
+    # For masked pseudo training, pseudo samples are repeated more strongly
+    # because their loss only applies on a few labeled cells.
     mixed_train = ConcatDataset([
         synthetic_train,
+        pseudo_train,
         pseudo_train,
         pseudo_train,
     ])
@@ -142,18 +144,18 @@ if __name__ == "__main__":
 
     logger = TensorBoardLogger(
         "tb_logs",
-        name="deepcharuco_pseudo_min4"
+        name="deepcharuco_dense_conservative"
     )
 
     checkpoint_callback = ModelCheckpoint(
-        dirpath="tb_logs/ckpts_deepcharuco_pseudo_min4/",
+        dirpath="tb_logs/ckpts_deepcharuco_dense_conservative/",
         save_top_k=10,
         monitor="val_loss",
         mode="min",
     )
 
     trainer = pl.Trainer(
-        max_epochs=10,
+        max_epochs=8,
         logger=logger,
         accelerator="auto",
         callbacks=[
@@ -163,3 +165,4 @@ if __name__ == "__main__":
     )
 
     trainer.fit(train_model, train_loader, val_loader)
+    
